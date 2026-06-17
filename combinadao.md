@@ -1,2 +1,3 @@
 Combinando com o rapha
-Combinei, ta tudo certo.
+Combinei, ta tudo certo
+Ta mesmo?
