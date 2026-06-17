@@ -7,7 +7,7 @@ Salvando o código do programador brasileiro.
 
 Branch que nasce, branch que floresce,
 Merge que junta o que o tempo esquece.
-Push pra nuvem, pull pra voltar,
+Push pra nuvem, pull (pum)? pra voltar,
 E o Rapha aprende a colaborar.
 
 Conflito de merge? Vem cá, meu amigo,
