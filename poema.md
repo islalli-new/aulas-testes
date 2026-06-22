@@ -14,3 +14,6 @@ Conflito de merge? Vem cá, meu amigo,
 Resolve com calma, sem stress antigo.
 Que o Git é assim, ferramenta de irmão:
 Une o que separa, guarda a evolução.
+
+
+Adicionei pra testar
