@@ -14,6 +14,7 @@ import {
 import { startEngine, stopEngine, setEngineRpm, sfx } from '../game/audio.js'
 
 const IDLE_RPM = 0.12
+const REV_DECAY_TAU = 420 // freio-motor: constante de queda do giro ao soltar (ms)
 
 export default function Race({ mode, onFinish }) {
   const [gearIndex, setGearIndex] = useState(0)
@@ -52,31 +53,37 @@ export default function Race({ mode, onFinish }) {
       let light = false
       let limiter = false
 
+      const onGas = thr > THROTTLE_DEADZONE
       if (startedRef.current) {
-        eRef.current += thr * dt // acelerador proporcional
+        if (onGas) {
+          eRef.current += thr * dt // acelerando: giro sobe proporcional
+        } else {
+          eRef.current *= Math.exp(-dt / REV_DECAY_TAU) // sem gás: freio-motor (giro cai de verdade)
+        }
         const a = eRef.current
         light = a >= t.lightMs
         limiter = a >= t.riseMs
+        // avisos por transição (re-armam se o giro cair abaixo de novo)
         if (light && !lightAnnouncedRef.current) {
           lightAnnouncedRef.current = true
           sfx.shiftLight()
+        } else if (!light) {
+          lightAnnouncedRef.current = false
         }
-        if (limiter && !limiterRef.current) {
-          limiterRef.current = true
-          setAtLimiter(true)
+        if (limiter !== limiterRef.current) {
+          limiterRef.current = limiter
+          setAtLimiter(limiter)
         }
-        target = thr > THROTTLE_DEADZONE ? rpmFraction(a, gi) : IDLE_RPM
+        target = rpmFraction(a, gi)
       }
 
-      // inércia: sobe responsivo; sem acelerador desce devagar (freio-motor)
-      const accelerating = startedRef.current && thr > THROTTLE_DEADZONE
-      const tau = accelerating ? 34 : 300
-      const k = 1 - Math.exp(-dt / tau)
+      // ponteiro segue o giro de perto (mantém o quique do corta-giro crocante)
+      const k = 1 - Math.exp(-dt / 34)
       dispRpmRef.current += (target - dispRpmRef.current) * k
       const rpm = dispRpmRef.current
 
       tachState.current = { rpm, light, gear: gi + 1, overrev: limiter }
-      setEngineRpm(rpm, limiter && accelerating)
+      setEngineRpm(rpm, limiter && onGas)
       raf = requestAnimationFrame(loop)
     }
     raf = requestAnimationFrame(loop)
