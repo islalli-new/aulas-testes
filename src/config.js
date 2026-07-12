@@ -1,13 +1,9 @@
 // Configuração do placar global (Supabase).
 // Estes dois valores são PÚBLICOS e seguros de expor no front-end.
-// Enquanto estiverem vazios, o jogo usa o placar local (localStorage).
-//
-// Para ativar o ranking GLOBAL:
-//   1. Crie um projeto grátis em https://supabase.com
-//   2. Rode o SQL de setup (ver README/instruções) no SQL Editor
-//   3. Cole aqui a URL do projeto e a anon public key
-export const SUPABASE_URL = ''
-export const SUPABASE_ANON_KEY = ''
+// (A chave abaixo é a "publishable" — feita pra rodar no navegador.
+//  A segurança está nas policies de RLS do banco, não em esconder a chave.)
+export const SUPABASE_URL = 'https://spyzasmvfutwsrmakbgs.supabase.co'
+export const SUPABASE_ANON_KEY = 'sb_publishable_B1UlKi9HOrYCGC_Oo_5FYA_9w7s9fh-'
 
 // Nome da tabela criada no Supabase.
 export const SCORES_TABLE = 'scores'

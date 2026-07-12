@@ -22,29 +22,37 @@ function sortRows(rows) {
   return [...rows].sort((a, b) => b.score - a.score).slice(0, TOP_N)
 }
 
-async function fetchGlobal() {
-  const url =
-    `${SUPABASE_URL}/rest/v1/${SCORES_TABLE}` +
-    `?select=name,score,mode,created_at&order=score.desc&limit=${TOP_N}`
-  const res = await fetch(url, {
-    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+// Faz a chamada com apikey + Bearer; se der 401 (comum com o formato novo de
+// chave, que não é JWT), tenta de novo só com o header apikey.
+async function sbFetch(path, init = {}, extraHeaders = {}) {
+  const base = { apikey: SUPABASE_ANON_KEY, ...extraHeaders }
+  let res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...init,
+    headers: { ...base, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
   })
+  if (res.status === 401) {
+    res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { ...init, headers: base })
+  }
+  return res
+}
+
+async function fetchGlobal() {
+  const path =
+    `${SCORES_TABLE}?select=name,score,mode,created_at&order=score.desc&limit=${TOP_N}`
+  const res = await sbFetch(path)
   if (!res.ok) throw new Error(`leaderboard fetch ${res.status}`)
   return res.json()
 }
 
 async function insertGlobal(entry) {
-  const url = `${SUPABASE_URL}/rest/v1/${SCORES_TABLE}`
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      'Content-Type': 'application/json',
-      Prefer: 'return=minimal',
+  const res = await sbFetch(
+    SCORES_TABLE,
+    {
+      method: 'POST',
+      body: JSON.stringify({ name: entry.name, score: entry.score, mode: entry.mode }),
     },
-    body: JSON.stringify({ name: entry.name, score: entry.score, mode: entry.mode }),
-  })
+    { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+  )
   if (!res.ok) throw new Error(`leaderboard insert ${res.status}`)
 }
 
