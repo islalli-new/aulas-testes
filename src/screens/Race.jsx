@@ -24,6 +24,8 @@ export default function Race({ mode, onFinish }) {
 
   const tachState = useRef({ rpm: IDLE_RPM, light: false, gear: 1, overrev: false })
   const gearIdxRef = useRef(0)
+  const dispRpmRef = useRef(IDLE_RPM) // giro exibido (com inércia)
+  const lastFrameRef = useRef(0)
 
   // Acúmulo de giro: só corre enquanto o acelerador está ATIVO (segurado).
   const startedRef = useRef(false) // já engatou esta marcha?
@@ -53,22 +55,26 @@ export default function Race({ mode, onFinish }) {
     let raf
     const loop = () => {
       const now = performance.now()
+      const dt = lastFrameRef.current ? Math.min(100, now - lastFrameRef.current) : 16
+      lastFrameRef.current = now
+
       const gi = gearIdxRef.current
       const t = gearTimings(gi)
-      let rpm = IDLE_RPM
+      const accelerating = startedRef.current && accelActiveRef.current
+      let target = IDLE_RPM // alvo do giro; sem acelerador cai pra marcha lenta
       let light = false
-      let overrev = false
-
       let limiter = false
+
       if (startedRef.current) {
         const a = accelMs(now)
-        rpm = rpmFraction(a, gi)
-        light = a >= t.lightMs
-        limiter = a >= t.riseMs
-        overrev = limiter
-        if (light && !lightAnnouncedRef.current) {
-          lightAnnouncedRef.current = true
-          sfx.shiftLight()
+        if (accelActiveRef.current) {
+          target = rpmFraction(a, gi)
+          light = a >= t.lightMs
+          limiter = a >= t.riseMs
+          if (light && !lightAnnouncedRef.current) {
+            lightAnnouncedRef.current = true
+            sfx.shiftLight()
+          }
         }
         // trava de segurança: deixa curtir o corta-giro e então auto-troca (nota de piso)
         if (!doneRef.current && a > t.riseMs + 1500) {
@@ -76,7 +82,13 @@ export default function Race({ mode, onFinish }) {
         }
       }
 
-      tachState.current = { rpm, light, gear: gi + 1, overrev }
+      // inércia do ponteiro: sobe responsivo; sem acelerador DESCE devagar (freio-motor)
+      const tau = accelerating ? 34 : 300
+      const k = 1 - Math.exp(-dt / tau)
+      dispRpmRef.current += (target - dispRpmRef.current) * k
+      const rpm = dispRpmRef.current
+
+      tachState.current = { rpm, light, gear: gi + 1, overrev: limiter }
       setEngineRpm(rpm, limiter)
       raf = requestAnimationFrame(loop)
     }
