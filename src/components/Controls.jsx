@@ -4,9 +4,10 @@ import { useEffect, useRef, useState } from 'react'
 // Interface com a corrida (timestamps do PRÓPRIO evento — DOMHighResTimeStamp):
 //   onThrottle(thr, ts) -> posição do acelerador agora (0..1). No fácil é 0/1.
 //   onShift(ts)         -> troca acionada (fácil: soltar; difícil: embreagem no fundo)
-// O giro sobe proporcional ao acelerador (integrado por tempo). Em manual, a troca
-// SÓ acontece na embreagem — nada de trocar sozinho.
+// Os pedais têm MOLA: seguem o dedo ao deslizar e voltam gradual ao soltar
+// (no telefone o toque é binário, então a "analogicidade" é simulada aqui).
 export const THROTTLE_DEADZONE = 0.06
+const CLUTCH_SHIFT = 0.8 // fração até o fundo que aciona a troca
 
 export default function Controls({ mode, gearKey, active, onThrottle, onShift }) {
   const shifted = useRef(false)
@@ -45,7 +46,7 @@ function EasyControls({ active, onThrottle, tsOf, doShift }) {
       onPointerUp={(e) => {
         e.preventDefault()
         setDown(false)
-        doShift(e) // troca com o acelerador ainda "cheio" (nota precisa)
+        doShift(e)
         onThrottle(0, tsOf(e))
       }}
       onPointerCancel={(e) => {
@@ -62,89 +63,143 @@ function EasyControls({ active, onThrottle, tsOf, doShift }) {
   )
 }
 
-// ---- MODO DIFÍCIL: embreagem (esq, desce) + acelerador (dir, proporcional) ----
-const CLUTCH_SHIFT = 0.8 // fração até o fundo que aciona a troca
+function applyVisual(fill, handle, pos) {
+  const pct = Math.max(0, Math.min(1, pos)) * 100
+  if (fill) fill.style.height = pct + '%'
+  if (handle) handle.style.bottom = pct + '%'
+}
 
+// ---- MODO DIFÍCIL: embreagem (esq) + acelerador (dir), ambos com mola ----
 function HardControls({ active, onThrottle, tsOf, doShift }) {
-  const [throttle, setThrottle] = useState(0) // 0 baixo .. 1 topo
-  const [clutch, setClutch] = useState(0) // 0 solto .. 1 fundo
-  const accelId = useRef(null)
-  const clutchId = useRef(null)
+  const accelFill = useRef(null)
+  const accelHandle = useRef(null)
+  const clutchFill = useRef(null)
+  const clutchHandle = useRef(null)
+  const [accelOn, setAccelOn] = useState(false)
+  const [clutchIn, setClutchIn] = useState(false)
+
+  const onThrottleRef = useRef(onThrottle)
+  onThrottleRef.current = onThrottle
+
+  // estado da física dos pedais (fora do React, atualizado no rAF)
+  const st = useRef({
+    accelTarget: 0, accelPos: 0, accelDown: false, accelId: null,
+    clutchTarget: 0, clutchPos: 0, clutchDown: false, clutchId: null,
+    lastThr: -1, lastFrame: 0,
+  })
+
+  useEffect(() => {
+    let raf
+    const loop = () => {
+      const now = performance.now()
+      const s = st.current
+      const dt = s.lastFrame ? Math.min(100, now - s.lastFrame) : 16
+      s.lastFrame = now
+
+      for (const k of ['accel', 'clutch']) {
+        const down = s[k + 'Down']
+        const target = down ? s[k + 'Target'] : 0 // solto -> mola volta ao 0
+        const tau = down ? 20 : 130 // aperta rápido; mola de volta suave
+        const kk = 1 - Math.exp(-dt / tau)
+        s[k + 'Pos'] += (target - s[k + 'Pos']) * kk
+      }
+      applyVisual(accelFill.current, accelHandle.current, s.accelPos)
+      applyVisual(clutchFill.current, clutchHandle.current, s.clutchPos)
+
+      const thr = s.accelPos < THROTTLE_DEADZONE ? 0 : s.accelPos
+      if (Math.abs(thr - s.lastThr) > 0.002) {
+        s.lastThr = thr
+        onThrottleRef.current(thr, now)
+      }
+      raf = requestAnimationFrame(loop)
+    }
+    raf = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(raf)
+  }, [])
 
   const upFrac = (e, el) => {
     const r = el.getBoundingClientRect()
     return Math.max(0, Math.min(1, (r.bottom - e.clientY) / r.height))
   }
 
-  // ---- acelerador (direita): posição do dedo = quanto de gás (proporcional) ----
-  const applyThrottle = (e) => {
-    const raw = upFrac(e, e.currentTarget)
-    const thr = raw < THROTTLE_DEADZONE ? 0 : raw
-    setThrottle(thr)
-    onThrottle(thr, tsOf(e))
-  }
+  // acelerador (direita): posição do dedo = quanto de gás
   const accelDown = (e) => {
     e.preventDefault()
     if (!active) return
     try { e.currentTarget.setPointerCapture?.(e.pointerId) } catch (_) {}
-    accelId.current = e.pointerId
-    applyThrottle(e)
+    const s = st.current
+    s.accelId = e.pointerId
+    s.accelDown = true
+    s.accelTarget = upFrac(e, e.currentTarget)
+    setAccelOn(true)
   }
   const accelMove = (e) => {
-    if (accelId.current !== e.pointerId) return
-    applyThrottle(e)
+    const s = st.current
+    if (s.accelId !== e.pointerId) return
+    s.accelTarget = upFrac(e, e.currentTarget)
   }
   const accelEnd = (e) => {
-    if (accelId.current !== e.pointerId) return
-    accelId.current = null
-    setThrottle(0)
-    onThrottle(0, tsOf(e))
+    const s = st.current
+    if (s.accelId !== e.pointerId) return
+    s.accelId = null
+    s.accelDown = false // deixa a mola voltar
+    setAccelOn(false)
   }
 
-  // ---- embreagem (esquerda): descer até o fundo troca ----
+  // embreagem (esquerda): descer até o fundo troca (no instante do dedo = preciso)
   const clutchDown = (e) => {
     e.preventDefault()
     if (!active) return
     try { e.currentTarget.setPointerCapture?.(e.pointerId) } catch (_) {}
-    clutchId.current = e.pointerId
+    const s = st.current
+    s.clutchId = e.pointerId
+    s.clutchDown = true
     const f = 1 - upFrac(e, e.currentTarget)
-    setClutch(f)
+    s.clutchTarget = f
+    setClutchIn(f >= CLUTCH_SHIFT)
     if (f >= CLUTCH_SHIFT) doShift(e)
   }
   const clutchMove = (e) => {
-    if (clutchId.current !== e.pointerId) return
+    const s = st.current
+    if (s.clutchId !== e.pointerId) return
     const f = 1 - upFrac(e, e.currentTarget)
-    setClutch(f)
+    s.clutchTarget = f
+    setClutchIn(f >= CLUTCH_SHIFT)
     if (f >= CLUTCH_SHIFT) doShift(e)
   }
   const clutchEnd = (e) => {
-    if (clutchId.current !== e.pointerId) return
-    clutchId.current = null
-    setClutch(0)
+    const s = st.current
+    if (s.clutchId !== e.pointerId) return
+    s.clutchId = null
+    s.clutchDown = false
+    setClutchIn(false)
   }
 
   return (
     <div className={`hard-pad ${active ? '' : 'is-off'}`}>
       <div
-        className={`slider-pane clutch ${clutch >= CLUTCH_SHIFT ? 'engaged' : ''}`}
+        className={`slider-pane clutch ${clutchIn ? 'engaged' : ''}`}
         style={{ touchAction: 'none' }}
         onPointerDown={clutchDown}
         onPointerMove={clutchMove}
         onPointerUp={clutchEnd}
         onPointerCancel={clutchEnd}
       >
-        <div className="slider-fill" style={{ height: `${clutch * 100}%` }} />
+        <div ref={clutchFill} className="slider-fill" />
+        <div className="slider-zone clutch-zone" />
+        <div ref={clutchHandle} className="slider-handle" />
         <div className="slider-label">EMBREAGEM ↓</div>
       </div>
       <div
-        className={`slider-pane accel ${throttle > THROTTLE_DEADZONE ? 'engaged' : ''}`}
+        className={`slider-pane accel ${accelOn ? 'engaged' : ''}`}
         style={{ touchAction: 'none' }}
         onPointerDown={accelDown}
         onPointerMove={accelMove}
         onPointerUp={accelEnd}
         onPointerCancel={accelEnd}
       >
-        <div className="slider-fill" style={{ height: `${throttle * 100}%` }} />
+        <div ref={accelFill} className="slider-fill" />
+        <div ref={accelHandle} className="slider-handle" />
         <div className="slider-label">ACELERADOR ↑</div>
       </div>
     </div>
