@@ -42,14 +42,29 @@ export function gearTimings(gearIndex) {
   }
 }
 
-// RPM de EXIBIÇÃO (0..1) a partir do tempo decorrido na marcha.
-// Curva levemente acelerada no fim pra dar aquela "puxada" perto do redline.
+// Período (ms) de uma "batida" do corta-giro no limitador (~14 Hz).
+export const LIMITER_PERIOD_MS = 72
+
+// RPM de EXIBIÇÃO (0..1) a partir do tempo decorrido na marcha. Só visual/áudio —
+// a NOTA nunca sai daqui.
+// Sobe de marcha lenta até o redline (1.0); ao passar do redline entra no
+// LIMITADOR e "quica" em dente-de-serra (fuel cut), tipo carro de corrida.
 export function rpmFraction(elapsedMs, gearIndex) {
   const { riseMs } = gearTimings(gearIndex)
-  const t = Math.min(1.2, Math.max(0, elapsedMs / riseMs)) // deixa passar do 1 (estouro)
-  // ease-in suave
-  const eased = Math.min(1.15, 0.18 + 0.82 * Math.pow(t, 1.35))
-  return eased
+  const p = Math.max(0, elapsedMs / riseMs)
+  if (p <= 1) {
+    // idle -> redline, com puxada no fim
+    return Math.min(1, 0.18 + 0.82 * Math.pow(p, 1.35))
+  }
+  // corta-giro: cai seco de 1.0 até ~0.88 e volta, repetindo (quique)
+  const over = elapsedMs - riseMs
+  const phase = (over % LIMITER_PERIOD_MS) / LIMITER_PERIOD_MS
+  return 1.0 - 0.12 * phase
+}
+
+// Está batendo no limitador (passou do redline)?
+export function isLimiter(elapsedMs, gearIndex) {
+  return elapsedMs > gearTimings(gearIndex).riseMs
 }
 
 // Toda troca pontua: mesmo a pior rende esse piso (fração do máximo da troca).

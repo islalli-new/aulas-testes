@@ -54,13 +54,19 @@ export function startEngine() {
   engineGain.gain.setTargetAtTime(0.12, c.currentTime, 0.05)
 }
 
-// rpm: 0..~1.15  (fração do redline)
-export function setEngineRpm(rpm) {
+// rpm: 0..1 (fração do redline). limiter=true quando bate no corta-giro.
+export function setEngineRpm(rpm, limiter = false) {
   if (!engineOsc) return
   const c = ac()
   const f = 70 + rpm * 320
-  engineOsc.frequency.setTargetAtTime(f, c.currentTime, 0.02)
-  engineSub.frequency.setTargetAtTime(f / 2, c.currentTime, 0.02)
+  engineOsc.frequency.setTargetAtTime(f, c.currentTime, limiter ? 0.008 : 0.02)
+  engineSub.frequency.setTargetAtTime(f / 2, c.currentTime, limiter ? 0.008 : 0.02)
+  if (limiter) {
+    // fuel cut: som cheio no topo do quique, quase-mudo no vale -> "bap-bap-bap"
+    const vol = rpm > 0.95 ? 0.32 : 0.03
+    engineGain.gain.setTargetAtTime(vol, c.currentTime, 0.004)
+    return
+  }
   const vol = 0.1 + Math.min(0.18, rpm * 0.14)
   engineGain.gain.setTargetAtTime(vol, c.currentTime, 0.03)
 }

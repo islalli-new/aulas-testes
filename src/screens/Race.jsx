@@ -59,23 +59,25 @@ export default function Race({ mode, onFinish }) {
       let light = false
       let overrev = false
 
+      let limiter = false
       if (startedRef.current) {
         const a = accelMs(now)
         rpm = rpmFraction(a, gi)
         light = a >= t.lightMs
-        overrev = a > t.riseMs * 1.02
+        limiter = a >= t.riseMs
+        overrev = limiter
         if (light && !lightAnnouncedRef.current) {
           lightAnnouncedRef.current = true
           sfx.shiftLight()
         }
-        // trava de segurança: passou muito do ideal (acelerando) -> troca forçada
-        if (!doneRef.current && a > t.idealMs + HIT_WINDOW_MS + 140) {
+        // trava de segurança: deixa curtir o corta-giro e então auto-troca (nota de piso)
+        if (!doneRef.current && a > t.riseMs + 1500) {
           handleShift(now)
         }
       }
 
       tachState.current = { rpm, light, gear: gi + 1, overrev }
-      setEngineRpm(rpm)
+      setEngineRpm(rpm, limiter)
       raf = requestAnimationFrame(loop)
     }
     raf = requestAnimationFrame(loop)
