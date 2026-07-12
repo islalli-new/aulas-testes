@@ -3,7 +3,6 @@ name: Deploy React no GitHub Pages
 on:
   push:
     branches:
-      - claude/hosting-deployment-options-wqmns0
       - master
   workflow_dispatch:
 
