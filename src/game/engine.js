@@ -52,19 +52,22 @@ export function rpmFraction(elapsedMs, gearIndex) {
   return eased
 }
 
+// Toda troca pontua: mesmo a pior rende esse piso (fração do máximo da troca).
+export const MIN_SHIFT_FRACTION = 0.08
+
 // Pontuação de UMA troca a partir do erro de tempo (ms) em relação ao ideal.
 // deltaMs pode ser negativo (cedo/bog) ou positivo (tarde/estourou).
+// Nunca zera: decai do máximo até o PISO conforme o erro cresce.
 export function shiftScore(deltaMs, mode) {
   const abs = Math.abs(deltaMs)
+  const floor = MAX_PER_SHIFT * MIN_SHIFT_FRACTION
   let base
   if (abs <= PERFECT_BAND_MS) {
     base = MAX_PER_SHIFT
-  } else if (abs >= HIT_WINDOW_MS) {
-    base = 0
   } else {
-    // decaimento quadrático suave de 1 -> 0 na janela
-    const x = (abs - PERFECT_BAND_MS) / (HIT_WINDOW_MS - PERFECT_BAND_MS)
-    base = MAX_PER_SHIFT * Math.pow(1 - x, 1.6)
+    // decaimento quadrático de MAX -> PISO na janela; fora dela fica no piso
+    const x = Math.min(1, (abs - PERFECT_BAND_MS) / (HIT_WINDOW_MS - PERFECT_BAND_MS))
+    base = floor + (MAX_PER_SHIFT - floor) * Math.pow(1 - x, 1.6)
   }
   const points = Math.round(base * DIFFICULTY_MULTIPLIER[mode])
   return { points, rating: ratingFor(abs), deltaMs: Math.round(deltaMs) }
@@ -74,8 +77,7 @@ export function ratingFor(absDeltaMs) {
   if (absDeltaMs <= PERFECT_BAND_MS) return 'PERFECT'
   if (absDeltaMs <= 140) return 'GREAT'
   if (absDeltaMs <= 260) return 'GOOD'
-  if (absDeltaMs < HIT_WINDOW_MS) return 'OK'
-  return 'MISS'
+  return 'OK'
 }
 
 export const RATING_COLOR = {
@@ -83,7 +85,6 @@ export const RATING_COLOR = {
   GREAT: '#00e5ff',
   GOOD: '#ffe600',
   OK: '#ff9d00',
-  MISS: '#ff2d55',
 }
 
 export function emptyRun() {

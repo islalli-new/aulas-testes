@@ -91,7 +91,7 @@ export default function Race({ mode, onFinish }) {
     setLastShift({ ...result, key: gi })
 
     if (result.rating === 'PERFECT') sfx.perfect()
-    else if (result.rating === 'MISS') sfx.badShift()
+    else if (Math.abs(result.deltaMs) >= HIT_WINDOW_MS) sfx.badShift()
     else sfx.goodShift()
 
     // avança a marcha
