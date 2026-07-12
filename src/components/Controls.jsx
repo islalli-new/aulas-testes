@@ -1,36 +1,36 @@
 import { useEffect, useRef, useState } from 'react'
 
 // Controles dos dois modos.
-// Interface com a corrida (timestamps do PRÓPRIO evento de toque — DOMHighResTimeStamp,
-// mesma base do performance.now()):
-//   onAccel(active, ts) -> acelerador passou a ser segurado (true) ou solto (false)
+// Interface com a corrida (timestamps do PRÓPRIO evento — DOMHighResTimeStamp):
+//   onThrottle(thr, ts) -> posição do acelerador agora (0..1). No fácil é 0/1.
 //   onShift(ts)         -> troca acionada (fácil: soltar; difícil: embreagem no fundo)
-// O giro só acumula enquanto o acelerador está ATIVO (segurado). Isso conserta o
-// "acelera infinito só de encostar".
-// `gearKey` muda a cada marcha para rearmar o latch da troca.
-export default function Controls({ mode, gearKey, active, onAccel, onShift }) {
+// O giro sobe proporcional ao acelerador (integrado por tempo). Em manual, a troca
+// SÓ acontece na embreagem — nada de trocar sozinho.
+export const THROTTLE_DEADZONE = 0.06
+
+export default function Controls({ mode, gearKey, active, onThrottle, onShift }) {
   const shifted = useRef(false)
   useEffect(() => {
     shifted.current = false
   }, [gearKey])
 
-  const ts = (e) =>
+  const tsOf = (e) =>
     typeof e.timeStamp === 'number' && e.timeStamp > 0 ? e.timeStamp : performance.now()
 
   const doShift = (e) => {
     if (!active || shifted.current) return
     shifted.current = true
-    onShift(ts(e))
+    onShift(tsOf(e))
   }
 
   if (mode === 'hard') {
-    return <HardControls active={active} onAccel={onAccel} tsOf={ts} doShift={doShift} />
+    return <HardControls active={active} onThrottle={onThrottle} tsOf={tsOf} doShift={doShift} />
   }
-  return <EasyControls active={active} onAccel={onAccel} tsOf={ts} doShift={doShift} />
+  return <EasyControls active={active} onThrottle={onThrottle} tsOf={tsOf} doShift={doShift} />
 }
 
 // ---- MODO FÁCIL: segura pra acelerar em qualquer lugar, solta pra trocar ----
-function EasyControls({ active, onAccel, tsOf, doShift }) {
+function EasyControls({ active, onThrottle, tsOf, doShift }) {
   const [down, setDown] = useState(false)
   return (
     <div
@@ -40,18 +40,18 @@ function EasyControls({ active, onAccel, tsOf, doShift }) {
         e.preventDefault()
         if (!active) return
         setDown(true)
-        onAccel(true, tsOf(e))
+        onThrottle(1, tsOf(e))
       }}
       onPointerUp={(e) => {
         e.preventDefault()
         setDown(false)
-        onAccel(false, tsOf(e))
-        doShift(e)
+        doShift(e) // troca com o acelerador ainda "cheio" (nota precisa)
+        onThrottle(0, tsOf(e))
       }}
       onPointerCancel={(e) => {
         setDown(false)
-        onAccel(false, tsOf(e))
         doShift(e)
+        onThrottle(0, tsOf(e))
       }}
     >
       <div className="easy-pedal" style={{ transform: `scaleY(${down ? 1 : 0.25})` }} />
@@ -62,50 +62,43 @@ function EasyControls({ active, onAccel, tsOf, doShift }) {
   )
 }
 
-// ---- MODO DIFÍCIL: embreagem (esq, desce) + acelerador (dir, sobe) ----
-const ACCEL_ON = 0.5 // fração da altura a partir da qual o acelerador "engata"
+// ---- MODO DIFÍCIL: embreagem (esq, desce) + acelerador (dir, proporcional) ----
 const CLUTCH_SHIFT = 0.8 // fração até o fundo que aciona a troca
 
-function HardControls({ active, onAccel, tsOf, doShift }) {
+function HardControls({ active, onThrottle, tsOf, doShift }) {
   const [throttle, setThrottle] = useState(0) // 0 baixo .. 1 topo
   const [clutch, setClutch] = useState(0) // 0 solto .. 1 fundo
   const accelId = useRef(null)
-  const accelActive = useRef(false)
   const clutchId = useRef(null)
 
-  // fração vertical: 1 = topo, 0 = base
   const upFrac = (e, el) => {
     const r = el.getBoundingClientRect()
     return Math.max(0, Math.min(1, (r.bottom - e.clientY) / r.height))
   }
 
-  const setAccel = (on, e) => {
-    if (on === accelActive.current) return
-    accelActive.current = on
-    onAccel(on, tsOf(e))
+  // ---- acelerador (direita): posição do dedo = quanto de gás (proporcional) ----
+  const applyThrottle = (e) => {
+    const raw = upFrac(e, e.currentTarget)
+    const thr = raw < THROTTLE_DEADZONE ? 0 : raw
+    setThrottle(thr)
+    onThrottle(thr, tsOf(e))
   }
-
-  // ---- acelerador (direita): segurar pra cima acelera ----
   const accelDown = (e) => {
     e.preventDefault()
     if (!active) return
     try { e.currentTarget.setPointerCapture?.(e.pointerId) } catch (_) {}
     accelId.current = e.pointerId
-    const f = upFrac(e, e.currentTarget)
-    setThrottle(f)
-    setAccel(f >= ACCEL_ON, e)
+    applyThrottle(e)
   }
   const accelMove = (e) => {
     if (accelId.current !== e.pointerId) return
-    const f = upFrac(e, e.currentTarget)
-    setThrottle(f)
-    setAccel(f >= ACCEL_ON, e)
+    applyThrottle(e)
   }
   const accelEnd = (e) => {
     if (accelId.current !== e.pointerId) return
     accelId.current = null
     setThrottle(0)
-    setAccel(false, e)
+    onThrottle(0, tsOf(e))
   }
 
   // ---- embreagem (esquerda): descer até o fundo troca ----
@@ -114,7 +107,7 @@ function HardControls({ active, onAccel, tsOf, doShift }) {
     if (!active) return
     try { e.currentTarget.setPointerCapture?.(e.pointerId) } catch (_) {}
     clutchId.current = e.pointerId
-    const f = 1 - upFrac(e, e.currentTarget) // 1 = fundo
+    const f = 1 - upFrac(e, e.currentTarget)
     setClutch(f)
     if (f >= CLUTCH_SHIFT) doShift(e)
   }
@@ -144,7 +137,7 @@ function HardControls({ active, onAccel, tsOf, doShift }) {
         <div className="slider-label">EMBREAGEM ↓</div>
       </div>
       <div
-        className={`slider-pane accel ${throttle >= ACCEL_ON ? 'engaged' : ''}`}
+        className={`slider-pane accel ${throttle > THROTTLE_DEADZONE ? 'engaged' : ''}`}
         style={{ touchAction: 'none' }}
         onPointerDown={accelDown}
         onPointerMove={accelMove}
