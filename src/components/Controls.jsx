@@ -96,10 +96,12 @@ function HardControls({ active, onThrottle, tsOf, doShift }) {
       const dt = s.lastFrame ? Math.min(100, now - s.lastFrame) : 16
       s.lastFrame = now
 
+      // acelerador: segurar = pisa fundo com travel gradual; embreagem: segue o dedo
+      const TAU = { accel: { down: 105, up: 150 }, clutch: { down: 20, up: 130 } }
       for (const k of ['accel', 'clutch']) {
         const down = s[k + 'Down']
         const target = down ? s[k + 'Target'] : 0 // solto -> mola volta ao 0
-        const tau = down ? 20 : 130 // aperta rápido; mola de volta suave
+        const tau = down ? TAU[k].down : TAU[k].up
         const kk = 1 - Math.exp(-dt / tau)
         s[k + 'Pos'] += (target - s[k + 'Pos']) * kk
       }
@@ -122,7 +124,8 @@ function HardControls({ active, onThrottle, tsOf, doShift }) {
     return Math.max(0, Math.min(1, (r.bottom - e.clientY) / r.height))
   }
 
-  // acelerador (direita): posição do dedo = quanto de gás
+  // acelerador (direita): segurar em QUALQUER lugar da área = pisa fundo (ergonômico).
+  // A "pisada" é gradual (mola) e ao soltar volta gradual. Sem precisar mirar posição.
   const accelDown = (e) => {
     e.preventDefault()
     if (!active) return
@@ -130,14 +133,10 @@ function HardControls({ active, onThrottle, tsOf, doShift }) {
     const s = st.current
     s.accelId = e.pointerId
     s.accelDown = true
-    s.accelTarget = upFrac(e, e.currentTarget)
+    s.accelTarget = 1
     setAccelOn(true)
   }
-  const accelMove = (e) => {
-    const s = st.current
-    if (s.accelId !== e.pointerId) return
-    s.accelTarget = upFrac(e, e.currentTarget)
-  }
+  const accelMove = () => {}
   const accelEnd = (e) => {
     const s = st.current
     if (s.accelId !== e.pointerId) return
@@ -200,7 +199,7 @@ function HardControls({ active, onThrottle, tsOf, doShift }) {
       >
         <div ref={accelFill} className="slider-fill" />
         <div ref={accelHandle} className="slider-handle" />
-        <div className="slider-label">ACELERADOR ↑</div>
+        <div className="slider-label">ACELERADOR<br />(SEGURE)</div>
       </div>
     </div>
   )

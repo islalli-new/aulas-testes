@@ -168,7 +168,7 @@ export default function Race({ mode, onFinish }) {
         )}
         {!launched && !doneRef.current && (
           <div className="launch-hint">
-            {mode === 'hard' ? 'ACELERE (DIREITA, P/ CIMA) PRA ENGATAR' : 'SEGURE PRA ACELERAR'}
+            {mode === 'hard' ? 'SEGURE A DIREITA PRA ACELERAR' : 'SEGURE PRA ACELERAR'}
           </div>
         )}
       </div>
