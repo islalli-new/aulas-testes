@@ -8,6 +8,10 @@ import { useEffect, useRef, useState } from 'react'
 // (no telefone o toque é binário, então a "analogicidade" é simulada aqui).
 export const THROTTLE_DEADZONE = 0.06
 const CLUTCH_SHIFT = 0.8 // fração até o fundo que aciona a troca
+// Curso do acelerador FIXO em px (não depende do tamanho da tela) — arrastar
+// esse tanto pra baixo corta todo o gás. Maior = mais gradual/menos sensível.
+const FEATHER_TRAVEL = 260
+const FEATHER_DEADZONE = 12 // folga no topo: micro-movimento não tira o pé do fundo
 
 export default function Controls({ mode, gearKey, active, onThrottle, onShift }) {
   const shifted = useRef(false)
@@ -132,11 +136,9 @@ function HardControls({ active, onThrottle, tsOf, doShift }) {
     if (!active) return
     try { e.currentTarget.setPointerCapture?.(e.pointerId) } catch (_) {}
     const s = st.current
-    const r = e.currentTarget.getBoundingClientRect()
     s.accelId = e.pointerId
     s.accelDown = true
     s.accelStartY = e.clientY
-    s.accelRange = Math.max(60, r.height * 0.55) // arrastar isso pra baixo = solta o gás
     s.accelTarget = 1
     setAccelOn(true)
   }
@@ -144,7 +146,8 @@ function HardControls({ active, onThrottle, tsOf, doShift }) {
     const s = st.current
     if (s.accelId !== e.pointerId) return
     const delta = e.clientY - s.accelStartY // >0 = desceu o dedo
-    s.accelTarget = Math.max(0, Math.min(1, 1 - delta / s.accelRange))
+    const d = Math.max(0, delta - FEATHER_DEADZONE) // curso fixo em px, com folga no topo
+    s.accelTarget = Math.max(0, Math.min(1, 1 - d / FEATHER_TRAVEL))
   }
   const accelEnd = (e) => {
     const s = st.current
