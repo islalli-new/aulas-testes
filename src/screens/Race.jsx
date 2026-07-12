@@ -24,12 +24,30 @@ export default function Race({ mode, onFinish }) {
 
   const tachState = useRef({ rpm: IDLE_RPM, light: false, gear: 1, overrev: false })
   const gearIdxRef = useRef(0)
-  const gearStartRef = useRef(null)
+
+  // Acúmulo de giro: só corre enquanto o acelerador está ATIVO (segurado).
+  const startedRef = useRef(false) // já engatou esta marcha?
+  const accelActiveRef = useRef(false)
+  const sinceRef = useRef(0) // ts em que o acelerador ficou ativo
+  const accumRef = useRef(0) // ms acumulados de aceleração (spans anteriores)
+
   const lightAnnouncedRef = useRef(false)
   const shiftsRef = useRef([])
   const doneRef = useRef(false)
 
-  // laço só de simulação/desenho — a NOTA não sai daqui, sai dos timestamps de toque
+  // ms de aceleração acumulados até "now" (timestamp)
+  const accelMs = (now) =>
+    accumRef.current + (accelActiveRef.current ? now - sinceRef.current : 0)
+
+  const resetGear = () => {
+    startedRef.current = false
+    accelActiveRef.current = false
+    sinceRef.current = 0
+    accumRef.current = 0
+    lightAnnouncedRef.current = false
+  }
+
+  // laço só de simulação/desenho — a NOTA sai dos timestamps de toque
   useEffect(() => {
     startEngine()
     let raf
@@ -41,17 +59,17 @@ export default function Race({ mode, onFinish }) {
       let light = false
       let overrev = false
 
-      if (gearStartRef.current != null) {
-        const elapsed = now - gearStartRef.current
-        rpm = rpmFraction(elapsed, gi)
-        light = elapsed >= t.lightMs
-        overrev = elapsed > t.riseMs * 1.02
+      if (startedRef.current) {
+        const a = accelMs(now)
+        rpm = rpmFraction(a, gi)
+        light = a >= t.lightMs
+        overrev = a > t.riseMs * 1.02
         if (light && !lightAnnouncedRef.current) {
           lightAnnouncedRef.current = true
           sfx.shiftLight()
         }
-        // trava de segurança: esperou demais -> troca forçada (MISS)
-        if (!doneRef.current && elapsed > t.idealMs + HIT_WINDOW_MS + 140) {
+        // trava de segurança: passou muito do ideal (acelerando) -> troca forçada
+        if (!doneRef.current && a > t.idealMs + HIT_WINDOW_MS + 140) {
           handleShift(now)
         }
       }
@@ -68,20 +86,30 @@ export default function Race({ mode, onFinish }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleEngage = (ts) => {
-    if (gearStartRef.current != null) return
-    gearStartRef.current = ts
-    lightAnnouncedRef.current = false
-    setLaunched(true)
+  // acelerador segurado (true) ou solto (false)
+  const handleAccel = (active, ts) => {
+    if (doneRef.current) return
+    if (active) {
+      if (accelActiveRef.current) return
+      accelActiveRef.current = true
+      sinceRef.current = ts
+      if (!startedRef.current) {
+        startedRef.current = true
+        setLaunched(true)
+      }
+    } else {
+      if (!accelActiveRef.current) return
+      accumRef.current += ts - sinceRef.current
+      accelActiveRef.current = false
+    }
   }
 
   const handleShift = (ts) => {
-    if (doneRef.current) return
-    if (gearStartRef.current == null) return
+    if (doneRef.current || !startedRef.current) return
     const gi = gearIdxRef.current
     const t = gearTimings(gi)
-    const idealAbs = gearStartRef.current + t.idealMs
-    const delta = ts - idealAbs
+    const a = accumRef.current + (accelActiveRef.current ? ts - sinceRef.current : 0)
+    const delta = a - t.idealMs // >0 tarde, <0 cedo
     const result = shiftScore(delta, mode)
     result.gear = gi + 1
 
@@ -94,10 +122,9 @@ export default function Race({ mode, onFinish }) {
     else if (Math.abs(result.deltaMs) >= HIT_WINDOW_MS) sfx.badShift()
     else sfx.goodShift()
 
-    // avança a marcha
     const nextIdx = gi + 1
-    gearStartRef.current = null
-    lightAnnouncedRef.current = false
+    const stillAccel = accelActiveRef.current // acelerador ainda segurado?
+    resetGear()
 
     if (shiftsRef.current.length >= NUM_SHIFTS) {
       doneRef.current = true
@@ -111,7 +138,16 @@ export default function Race({ mode, onFinish }) {
     gearIdxRef.current = nextIdx
     setGearIndex(nextIdx)
     setGearKey((k) => k + 1)
-    setLaunched(false)
+
+    if (stillAccel) {
+      // acelerador continua no fundo → engata a próxima marcha já, a partir de agora
+      startedRef.current = true
+      accelActiveRef.current = true
+      sinceRef.current = ts
+      setLaunched(true)
+    } else {
+      setLaunched(false)
+    }
   }
 
   useEffect(() => {
@@ -121,7 +157,7 @@ export default function Race({ mode, onFinish }) {
   }, [lastShift])
 
   return (
-    <div className="race">
+    <div className="race" data-gear={gearIndex + 1} data-score={scoreSoFar} data-launched={launched ? 1 : 0}>
       <div className="race-top">
         <Tachometer stateRef={tachState} />
         <div className="race-hud">
@@ -143,7 +179,7 @@ export default function Race({ mode, onFinish }) {
         )}
         {!launched && !doneRef.current && (
           <div className="launch-hint">
-            {mode === 'hard' ? 'ACELERE (DIREITA) PRA ENGATAR' : 'SEGURE PRA ACELERAR'}
+            {mode === 'hard' ? 'ACELERE (DIREITA, P/ CIMA) PRA ENGATAR' : 'SEGURE PRA ACELERAR'}
           </div>
         )}
       </div>
@@ -153,7 +189,7 @@ export default function Race({ mode, onFinish }) {
           mode={mode}
           gearKey={gearKey}
           active={!doneRef.current}
-          onEngage={handleEngage}
+          onAccel={handleAccel}
           onShift={handleShift}
         />
       </div>
