@@ -53,8 +53,10 @@ export function rpmFraction(elapsedMs, gearIndex) {
   const { riseMs } = gearTimings(gearIndex)
   const p = Math.max(0, elapsedMs / riseMs)
   if (p <= 1) {
-    // idle -> redline, com puxada no fim
-    return Math.min(1, 0.18 + 0.82 * Math.pow(p, 1.35))
+    // curva de torque: sai leve da lenta, puxa forte no meio e "perde fôlego"
+    // perto do redline (ease-out). Nada de subida uniforme.
+    const torque = 0.12 * p + 0.88 * (1 - Math.pow(1 - p, 1.7))
+    return Math.min(1, 0.16 + 0.84 * torque)
   }
   // corta-giro: cai seco de 1.0 até ~0.88 e volta, repetindo (quique)
   const over = elapsedMs - riseMs

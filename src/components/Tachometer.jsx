@@ -86,8 +86,15 @@ export default function Tachometer({ stateRef }) {
         g.stroke()
       }
 
-      // ponteiro
-      const na = START + SWEEP * Math.min(1.06, rpm)
+      // ponteiro — com vibração do motor (cresce com o giro; treme mais no limitador)
+      const now = performance.now()
+      const amp = 0.006 + rpm * 0.016 + (st.light ? 0.006 : 0)
+      const shake =
+        amp *
+        (Math.sin(now * 0.05) * 0.45 +
+          Math.sin(now * 0.121) * 0.3 +
+          (Math.random() - 0.5) * 0.55)
+      const na = START + SWEEP * Math.min(1.06, rpm) + shake
       g.save()
       g.translate(cx, cy)
       g.rotate(na)
