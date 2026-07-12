@@ -97,7 +97,7 @@ function HardControls({ active, onThrottle, tsOf, doShift }) {
       s.lastFrame = now
 
       // acelerador: segurar = pisa fundo com travel gradual; embreagem: segue o dedo
-      const TAU = { accel: { down: 105, up: 150 }, clutch: { down: 20, up: 130 } }
+      const TAU = { accel: { down: 70, up: 150 }, clutch: { down: 20, up: 130 } }
       for (const k of ['accel', 'clutch']) {
         const down = s[k + 'Down']
         const target = down ? s[k + 'Target'] : 0 // solto -> mola volta ao 0
@@ -124,19 +124,28 @@ function HardControls({ active, onThrottle, tsOf, doShift }) {
     return Math.max(0, Math.min(1, (r.bottom - e.clientY) / r.height))
   }
 
-  // acelerador (direita): segurar em QUALQUER lugar da área = pisa fundo (ergonômico).
-  // A "pisada" é gradual (mola) e ao soltar volta gradual. Sem precisar mirar posição.
+  // acelerador (direita): segurar em QUALQUER lugar = pisa fundo (ergonômico).
+  // Arrastar o dedo PRA BAIXO alivia o gás (relativo ao ponto do toque); voltar
+  // pra cima pisa fundo de novo. Assim dá meia aceleração sem esticar pro topo.
   const accelDown = (e) => {
     e.preventDefault()
     if (!active) return
     try { e.currentTarget.setPointerCapture?.(e.pointerId) } catch (_) {}
     const s = st.current
+    const r = e.currentTarget.getBoundingClientRect()
     s.accelId = e.pointerId
     s.accelDown = true
+    s.accelStartY = e.clientY
+    s.accelRange = Math.max(60, r.height * 0.55) // arrastar isso pra baixo = solta o gás
     s.accelTarget = 1
     setAccelOn(true)
   }
-  const accelMove = () => {}
+  const accelMove = (e) => {
+    const s = st.current
+    if (s.accelId !== e.pointerId) return
+    const delta = e.clientY - s.accelStartY // >0 = desceu o dedo
+    s.accelTarget = Math.max(0, Math.min(1, 1 - delta / s.accelRange))
+  }
   const accelEnd = (e) => {
     const s = st.current
     if (s.accelId !== e.pointerId) return
@@ -199,7 +208,7 @@ function HardControls({ active, onThrottle, tsOf, doShift }) {
       >
         <div ref={accelFill} className="slider-fill" />
         <div ref={accelHandle} className="slider-handle" />
-        <div className="slider-label">ACELERADOR<br />(SEGURE)</div>
+        <div className="slider-label">ACELERADOR<br />SEGURE · ↓ALIVIA</div>
       </div>
     </div>
   )
