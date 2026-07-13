@@ -5,9 +5,19 @@ import { sfx } from '../game/audio.js'
 
 const GAME_URL = 'https://islalli-new.github.io/aulas-testes/'
 const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' // sequência que rola no toque
+const LAST_KEY = 'marchas_initials' // lembra as últimas iniciais
+
+function loadInitials() {
+  try {
+    const s = (localStorage.getItem(LAST_KEY) || 'AAA').toUpperCase()
+    return [0, 1, 2].map((i) => Math.max(0, CHARS.indexOf(s[i] || 'A')))
+  } catch (_) {
+    return [0, 0, 0]
+  }
+}
 
 export default function Results({ run, onSubmitted, onReplay }) {
-  const [idx, setIdx] = useState([0, 0, 0]) // índice de cada slot em CHARS
+  const [idx, setIdx] = useState(loadInitials) // já começa com a última entrada
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -23,6 +33,7 @@ export default function Results({ run, onSubmitted, onReplay }) {
     if (saving || saved) return
     setSaving(true)
     sfx.select()
+    try { localStorage.setItem(LAST_KEY, initials) } catch (_) {} // lembra pra próxima
     const { rows, source, entry } = await submitScore({
       name: initials,
       score: run.total,

@@ -77,8 +77,10 @@ export default function Race({ mode, onFinish }) {
         target = rpmFraction(a, gi)
       }
 
-      // ponteiro segue o giro de perto (mantém o quique do corta-giro crocante)
-      const k = 1 - Math.exp(-dt / 34)
+      // acelerando: segue de perto (quique do corta-giro crocante);
+      // sem gás (soltou/trocou): desce devagar (freio-motor, nada de teleporte)
+      const tau = onGas ? 34 : 260
+      const k = 1 - Math.exp(-dt / tau)
       dispRpmRef.current += (target - dispRpmRef.current) * k
       const rpm = dispRpmRef.current
 
