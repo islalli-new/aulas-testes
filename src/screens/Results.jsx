@@ -4,21 +4,27 @@ import { RATING_COLOR } from '../game/engine.js'
 import { sfx } from '../game/audio.js'
 
 const GAME_URL = 'https://islalli-new.github.io/aulas-testes/'
+const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' // sequência que rola no toque
 
 export default function Results({ run, onSubmitted, onReplay }) {
-  const [name, setName] = useState('')
+  const [idx, setIdx] = useState([0, 0, 0]) // índice de cada slot em CHARS
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
-  const clean = name.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3)
+  const initials = idx.map((i) => CHARS[i]).join('')
+
+  // cada toque no slot rola a letra pra frente (A→Z→0→9, em loop)
+  const roll = (slot) => {
+    sfx.select()
+    setIdx((prev) => prev.map((v, i) => (i === slot ? (v + 1) % CHARS.length : v)))
+  }
 
   const save = async () => {
     if (saving || saved) return
     setSaving(true)
     sfx.select()
-    const finalName = (clean || 'AAA').padEnd(3, 'A')
     const { rows, source, entry } = await submitScore({
-      name: finalName,
+      name: initials,
       score: run.total,
       mode: run.mode,
     })
@@ -65,32 +71,24 @@ export default function Results({ run, onSubmitted, onReplay }) {
 
       {!saved ? (
         <div className="name-entry">
-          <div className="name-label">SUAS INICIAIS</div>
+          <div className="name-label">SUAS INICIAIS — TOQUE PRA ROLAR</div>
           <div className="name-slots">
             {[0, 1, 2].map((i) => (
-              <div key={i} className={`name-slot ${clean.length === i ? 'cursor' : ''}`}>
-                {clean[i] || '_'}
-              </div>
+              <button
+                key={i}
+                className="name-slot roll"
+                onClick={() => roll(i)}
+                aria-label={`Letra ${i + 1}: ${CHARS[idx[i]]}`}
+              >
+                <span className="roll-arrow">▲</span>
+                <span className="roll-char">{CHARS[idx[i]]}</span>
+                <span className="roll-arrow">▼</span>
+              </button>
             ))}
           </div>
-          <input
-            className="name-input"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            maxLength={3}
-            autoCapitalize="characters"
-            autoCorrect="off"
-            placeholder="AAA"
-            inputMode="text"
-          />
-          <div className="name-actions">
-            <button className="ghost-btn" onClick={() => setName('')}>
-              APAGAR
-            </button>
-            <button className="big-btn" onClick={save} disabled={saving}>
-              {saving ? 'SALVANDO…' : 'SALVAR ✓'}
-            </button>
-          </div>
+          <button className="big-btn" onClick={save} disabled={saving}>
+            {saving ? 'SALVANDO…' : 'CONFIRMAR ✓'}
+          </button>
         </div>
       ) : (
         <div className="saved-msg">SALVO! 🏆</div>
